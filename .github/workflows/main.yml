@@ -3,12 +3,11 @@ name: Intraday Breakout Automation
 on:
   schedule:
     # BUY Breakout @ 09:15 IST (UTC 03:45)
-    - cron: "45 3 * * 1-5"
+    - cron: "47 3 * * 1-5"
 
     # SELL Breakdown @ 10:00 IST (UTC 04:30)
     - cron: "30 4 * * 1-5"
 
-  # Allow manual run from GitHub UI
   workflow_dispatch:
 
 jobs:
@@ -28,7 +27,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       # -------------------------------------------------
       # INSTALL DEPENDENCIES
@@ -36,10 +35,10 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install requests pymongo
+          pip install requests pymongo pillow tabulate
 
       # -------------------------------------------------
-      # DOWNLOAD obj_data.json (Stock Master)
+      # DOWNLOAD obj_data.json
       # -------------------------------------------------
       - name: Download stock master (obj_data.json)
         run: |
@@ -54,6 +53,7 @@ jobs:
           (github.event_name == 'schedule' && startsWith(github.event.schedule, '45 3'))
         env:
           MONGO_URI: ${{ secrets.MONGO_URI }}
+          TELEGRAM_DATA: ${{ secrets.TELEGRAM_DATA }}
         run: |
           python buy_breakout_915.py
 
@@ -66,5 +66,6 @@ jobs:
           (github.event_name == 'schedule' && startsWith(github.event.schedule, '30 4'))
         env:
           MONGO_URI: ${{ secrets.MONGO_URI }}
+          TELEGRAM_DATA: ${{ secrets.TELEGRAM_DATA }}
         run: |
           python sell_breakdown_1000.py
