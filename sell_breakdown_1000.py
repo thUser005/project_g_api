@@ -14,6 +14,7 @@ from table_to_image import table_to_png
 # ================= CONFIG =================
 CAPITAL = 20_000
 TARGET_PCT = 0.03
+STOPLOSS_PCT = 0.02          # ✅ 2% SL ABOVE entry (SELL logic)
 INTERVAL_MINUTES = 3
 EXCHANGE = "NSE"
 
@@ -125,6 +126,7 @@ def process_stock(stock, start, end):
             if l < morning_high:
                 entry = round(c, 2)
                 target = round(entry * (1 - TARGET_PCT), 2)
+                stoploss = round(entry * (1 + STOPLOSS_PCT), 2)   # ✅ SELL SL
 
                 qty = math.floor(CAPITAL / entry)
                 if qty <= 0:
@@ -134,6 +136,7 @@ def process_stock(stock, start, end):
                     "symbol": symbol,
                     "entry": entry,
                     "target": target,
+                    "stoploss": stoploss,
                     "qty": qty,
                     "entry_time": dt.strftime("%H:%M"),
                     "exit_time": None,
@@ -203,7 +206,7 @@ def run():
 
         headers = [
             "SYMBOL", "ENTRY", "TARGET",
-            "QTY", "ENTRY TIME", "STATUS"
+            "SL", "QTY", "ENTRY TIME", "STATUS"
         ]
 
         rows = [
@@ -211,6 +214,7 @@ def run():
                 s["symbol"],
                 s["entry"],
                 s["target"],
+                s["stoploss"],
                 s["qty"],
                 s["entry_time"],
                 s["status"]

@@ -3,7 +3,6 @@ import json
 import math
 import requests
 import traceback
-import sys
 from datetime import datetime, timedelta, timezone
 from pymongo import MongoClient
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -16,6 +15,7 @@ from table_to_image import table_to_png
 CAPITAL = 20_000
 BREAKOUT_PCT = 0.03
 TARGET_PCT = 0.03
+STOPLOSS_PCT = 0.01          # ✅ 1% Stop Loss
 INTERVAL_MINUTES = 3
 EXCHANGE = "NSE"
 
@@ -104,8 +104,10 @@ def process_stock(stock, start, end):
             return None
 
         open_price = candles[0][1]
+
         entry = round(open_price * (1 + BREAKOUT_PCT), 2)
         target = round(entry * (1 + TARGET_PCT), 2)
+        stoploss = round(entry * (1 - STOPLOSS_PCT), 2)   # ✅ SL added
 
         qty = math.floor(CAPITAL / entry)
         if qty <= 0:
@@ -116,6 +118,7 @@ def process_stock(stock, start, end):
             "open": round(open_price, 2),
             "entry": entry,
             "target": target,
+            "stoploss": stoploss,
             "qty": qty,
             "entry_time": None,
             "exit_time": None,
@@ -191,7 +194,7 @@ def run():
 
         headers = [
             "SYMBOL", "OPEN", "ENTRY", "TARGET",
-            "QTY", "ENTRY TIME", "STATUS"
+            "SL", "QTY", "STATUS"
         ]
 
         rows = [
@@ -200,8 +203,8 @@ def run():
                 s["open"],
                 s["entry"],
                 s["target"],
+                s["stoploss"],
                 s["qty"],
-                s["entry_time"],
                 s["status"]
             ]
             for s in buy_signals
