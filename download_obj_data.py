@@ -5,7 +5,7 @@ from pathlib import Path
 # =====================================================
 # CONFIG
 # =====================================================
-FILE_ID = "14LDJZbHmI8Hs01zj7ZdpUFTagELj72Ik"
+FILE_ID = "1Aob4F-0PMwjv5_kchqgPmdQZQyby7YCY"
 OUTPUT_FILE = "obj_data.json"
 
 BASE_URL = "https://drive.google.com/uc?export=download"
