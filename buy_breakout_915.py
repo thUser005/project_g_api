@@ -7,6 +7,9 @@ from pymongo import MongoClient
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
 
+from telegram_sender import send_photo
+from table_to_image import table_to_png
+
 # ================= CONFIG =================
 CAPITAL = 20_000
 BREAKOUT_PCT = 0.03
@@ -61,7 +64,7 @@ def fetch_candles_with_retry(symbol, start, end):
         except Exception as e:
             print(f"⚠️ {symbol} | retry {attempt}/{MAX_RETRIES} | {e}")
 
-    return None  # fail after retries
+    return None
 
 # ================= WORKER =================
 def process_stock(stock, start, end):
@@ -70,7 +73,6 @@ def process_stock(stock, start, end):
             return None
 
         symbol = stock["nse_code"]
-
         candles = fetch_candles_with_retry(symbol, start, end)
         if not candles:
             return None
@@ -94,7 +96,6 @@ def process_stock(stock, start, end):
         }
 
     except Exception as e:
-        # absolute safety — skip stock
         print(f"❌ {stock.get('nse_code')} | skipped | {e}")
         return None
 
@@ -145,6 +146,45 @@ def run():
     )
 
     print(f"✅ BUY signals saved: {len(buy_signals)}")
+
+    # ================= TELEGRAM TABLE =================
+    if not buy_signals:
+        print("ℹ️ No BUY signals to send")
+        return
+
+    headers = [
+        "SYMBOL", "OPEN", "ENTRY", "TARGET",
+        "QTY", "ENTRY TIME", "STATUS"
+    ]
+
+    rows = [
+        [
+            s["symbol"],
+            s["open"],
+            s["entry"],
+            s["target"],
+            s["qty"],
+            s["entry_time"],
+            s["status"]
+        ]
+        for s in buy_signals
+    ]
+
+    image_path = "buy_breakout_signals.png"
+
+    table_to_png(
+        headers=headers,
+        rows=rows,
+        output_path=image_path,
+        title=f"BUY BREAKOUT SIGNALS — {trade_date}"
+    )
+
+    send_photo(
+        image_path=image_path,
+        caption=f"📈 BUY Breakout Signals ({trade_date})"
+    )
+
+    print("📤 Telegram image sent successfully")
 
 if __name__ == "__main__":
     run()
