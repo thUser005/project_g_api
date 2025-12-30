@@ -224,20 +224,20 @@ def run():
 
         image_path = "sell_breakdown_signals.png"
 
-        try:
-            table_to_png(
-                headers=headers,
-                rows=rows,
-                output_path=image_path,
-                title=f"SELL BREAKDOWN SIGNALS — {trade_date}"
-            )
+        # try:
+        #     table_to_png(
+        #         headers=headers,
+        #         rows=rows,
+        #         output_path=image_path,
+        #         title=f"SELL BREAKDOWN SIGNALS — {trade_date}"
+        #     )
 
-            send_photo(
-                image_path=image_path,
-                caption=f"📉 SELL Breakdown Signals ({trade_date})"
-            )
-        except Exception:
-            notify_exception("TELEGRAM IMAGE SEND")
+        #     send_photo(
+        #         image_path=image_path,
+        #         caption=f"📉 SELL Breakdown Signals ({trade_date})"
+        #     )
+        # except Exception:
+        #     notify_exception("TELEGRAM IMAGE SEND")
 
         print("📤 Telegram alert sent")
 

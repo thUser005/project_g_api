@@ -219,17 +219,17 @@ def run():
 
         image_path = "buy_breakout_signals.png"
 
-        table_to_png(
-            headers=headers,
-            rows=rows,
-            output_path=image_path,
-            title=f"BUY BREAKOUT SIGNALS — {trade_date}"
-        )
+        # table_to_png(
+        #     headers=headers,
+        #     rows=rows,
+        #     output_path=image_path,
+        #     title=f"BUY BREAKOUT SIGNALS — {trade_date}"
+        # )
 
-        send_photo(
-            image_path=image_path,
-            caption=f"📈 BUY Breakout Signals ({trade_date})"
-        )
+        # send_photo(
+        #     image_path=image_path,
+        #     caption=f"📈 BUY Breakout Signals ({trade_date})"
+        # )
 
         print("📤 Telegram alert sent")
 
