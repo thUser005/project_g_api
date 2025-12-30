@@ -149,7 +149,7 @@ def process_stock(stock, start, end):
         return None
 
 # ================= MAIN =================
-def run():
+def run_buy():
     try:
         start, end = market_range()
         trade_date = today()
@@ -238,4 +238,4 @@ def run():
 
 # ================= ENTRY =================
 if __name__ == "__main__":
-    run()
+    run_buy()
