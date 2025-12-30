@@ -15,7 +15,7 @@ from table_to_image import table_to_png
 CAPITAL = 20_000
 BREAKOUT_PCT = 0.03
 TARGET_PCT = 0.03
-STOPLOSS_PCT = 0.01          # ✅ 1% Stop Loss
+STOPLOSS_PCT = 0.01
 INTERVAL_MINUTES = 3
 EXCHANGE = "NSE"
 
@@ -87,7 +87,7 @@ def fetch_candles_with_retry(symbol, start, end):
         except Exception:
             print(f"⚠️ {symbol} | retry {attempt}/{MAX_RETRIES}")
 
-    return None
+    return []
 
 # ================= WORKER =================
 def process_stock(stock, start, end):
@@ -100,14 +100,31 @@ def process_stock(stock, start, end):
             return None
 
         candles = fetch_candles_with_retry(symbol, start, end)
-        if not candles or len(candles[0]) < 2:
+        if not candles:
             return None
 
-        open_price = candles[0][1]
+        first = candles[0]
+
+        # candle format:
+        # [timestamp, open, high, low, close, volume]
+        if len(first) < 6:
+            return None
+
+        open_price = first[1]
+        volume = first[5]
+
+        # 🔥 CRITICAL VALIDATION (BUG FIX)
+        if open_price is None or open_price <= 0:
+            print(f"⚠️ Skipping {symbol} — invalid open price: {open_price}")
+            return None
+
+        # Optional liquidity filter (safe)
+        if volume is None or volume < 100:
+            return None
 
         entry = round(open_price * (1 + BREAKOUT_PCT), 2)
         target = round(entry * (1 + TARGET_PCT), 2)
-        stoploss = round(entry * (1 - STOPLOSS_PCT), 2)   # ✅ SL added
+        stoploss = round(entry * (1 - STOPLOSS_PCT), 2)
 
         qty = math.floor(CAPITAL / entry)
         if qty <= 0:
@@ -153,37 +170,30 @@ def run():
             ]
 
             for future in as_completed(futures):
-                try:
-                    result = future.result()
-                    if result:
-                        with lock:
-                            buy_signals.append(result)
-                except Exception:
-                    notify_exception("THREAD EXECUTION")
+                result = future.result()
+                if result:
+                    with lock:
+                        buy_signals.append(result)
 
         # ================= SAVE TO MONGO =================
-        try:
-            client = MongoClient(MONGO_URI)
-            col = client[DB][COL]
+        client = MongoClient(MONGO_URI)
+        col = client[DB][COL]
 
-            col.create_index("trade_date", unique=True)
+        col.create_index("trade_date", unique=True)
 
-            col.update_one(
-                {"trade_date": trade_date},
-                {
-                    "$setOnInsert": {
-                        "trade_date": trade_date,
-                        "created_at": datetime.utcnow(),
-                        "capital": CAPITAL,
-                        "margin": 5
-                    },
-                    "$set": {"buy_signals": buy_signals}
+        col.update_one(
+            {"trade_date": trade_date},
+            {
+                "$setOnInsert": {
+                    "trade_date": trade_date,
+                    "created_at": datetime.utcnow(),
+                    "capital": CAPITAL,
+                    "margin": 5
                 },
-                upsert=True
-            )
-        except Exception:
-            notify_exception("MONGO SAVE")
-            return
+                "$set": {"buy_signals": buy_signals}
+            },
+            upsert=True
+        )
 
         print(f"✅ BUY signals saved: {len(buy_signals)}")
 
@@ -192,10 +202,7 @@ def run():
             send_message(f"ℹ️ No BUY signals for {trade_date}")
             return
 
-        headers = [
-            "SYMBOL", "OPEN", "ENTRY", "TARGET",
-            "SL", "QTY", "STATUS"
-        ]
+        headers = ["SYMBOL", "OPEN", "ENTRY", "TARGET", "SL", "QTY", "STATUS"]
 
         rows = [
             [
@@ -212,20 +219,17 @@ def run():
 
         image_path = "buy_breakout_signals.png"
 
-        try:
-            table_to_png(
-                headers=headers,
-                rows=rows,
-                output_path=image_path,
-                title=f"BUY BREAKOUT SIGNALS — {trade_date}"
-            )
+        table_to_png(
+            headers=headers,
+            rows=rows,
+            output_path=image_path,
+            title=f"BUY BREAKOUT SIGNALS — {trade_date}"
+        )
 
-            send_photo(
-                image_path=image_path,
-                caption=f"📈 BUY Breakout Signals ({trade_date})"
-            )
-        except Exception:
-            notify_exception("TELEGRAM IMAGE SEND")
+        send_photo(
+            image_path=image_path,
+            caption=f"📈 BUY Breakout Signals ({trade_date})"
+        )
 
         print("📤 Telegram alert sent")
 
