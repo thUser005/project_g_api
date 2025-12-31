@@ -8,9 +8,9 @@ from pymongo import MongoClient
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
 
-from telegram_sender import send_photo, send_message
-from table_to_image import table_to_png
+from telegram_sender import send_message
 from download_obj_data import download_main
+
 # ================= CONFIG =================
 CAPITAL = 20_000
 BREAKOUT_PCT = 0.03
@@ -24,12 +24,13 @@ MAX_RETRIES = 3
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
+# ================= DOWNLOAD MASTER =================
 try:
-        
     download_main()
 except Exception as e:
-    print("Error : ",e)
-    
+    print("⚠️ obj_data download error:", e)
+
+# ================= DB =================
 MONGO_URL = os.getenv("MONGO_URL")
 if not MONGO_URL:
     raise RuntimeError("❌ MONGO_URL not set")
@@ -45,12 +46,11 @@ def to_bool(v):
         return v.lower() == "true"
     return False
 
-def notify_exception(context: str):
+def notify_exception(context):
     msg = (
         f"❌ ERROR in BUY Breakout Automation\n\n"
         f"📍 Context: {context}\n"
         f"🕒 Time: {datetime.now(IST)}\n\n"
-        f"📄 Traceback:\n"
         f"{traceback.format_exc()}"
     )
     send_message(msg[:4096])
@@ -68,16 +68,25 @@ def market_range():
     e = datetime.strptime(d, "%Y-%m-%d").replace(hour=15, minute=30, tzinfo=IST)
     return to_ms(s), to_ms(e)
 
-def get_run_mode():
-    now = datetime.now(IST).time()
+# ================= RUN MODE (DB FIRST) =================
+def get_run_mode(col, trade_date):
+    """
+    Priority:
+    1️⃣ If no document → MORNING
+    2️⃣ If morning_done != True → MORNING
+    3️⃣ Else → AFTERNOON
+    """
 
-    if now.hour == 9 and now.minute <= 30:
+    doc = col.find_one({"trade_date": trade_date})
+
+    if not doc:
         return "MORNING"
 
-    if now.hour == 15:
-        return "AFTERNOON"
+    flags = doc.get("run_flags", {})
+    if not flags.get("morning_done"):
+        return "MORNING"
 
-    return "UNKNOWN"
+    return "AFTERNOON"
 
 # ================= FETCH =================
 def fetch_candles_with_retry(symbol, start, end):
@@ -172,9 +181,14 @@ def process_stock(stock, start, end, run_mode):
 # ================= MAIN =================
 def run_buy():
     try:
-        run_mode = get_run_mode()
-        start, end = market_range()
         trade_date = today()
+        start, end = market_range()
+
+        client = MongoClient(MONGO_URL)
+        col = client[DB][COL]
+        col.create_index("trade_date", unique=True)
+
+        run_mode = get_run_mode(col, trade_date)
 
         with open("obj_data.json", "r", encoding="utf-8") as f:
             stocks = json.load(f)
@@ -197,12 +211,6 @@ def run_buy():
                     with lock:
                         buy_signals.append(r)
 
-        client = MongoClient(MONGO_URL)
-        col = client[DB][COL]
-        col.create_index("trade_date", unique=True)
-
-        existing = col.find_one({"trade_date": trade_date})
-
         if run_mode == "MORNING":
             col.update_one(
                 {"trade_date": trade_date},
@@ -222,39 +230,23 @@ def run_buy():
                 upsert=True
             )
 
-        elif run_mode == "AFTERNOON":
-            if not existing:
-                col.insert_one({
-                    "trade_date": trade_date,
-                    "created_at": datetime.utcnow(),
-                    "updated_at": datetime.utcnow(),
-                    "capital": CAPITAL,
-                    "margin": 5,
-                    "run_flags": {
-                        "morning_done": False,
-                        "afternoon_done": True
-                    },
-                    "buy_signals": buy_signals
-                })
-            else:
-                col.update_one(
-                    {"trade_date": trade_date},
-                    {
-                        "$set": {
-                            "buy_signals": buy_signals,
-                            "updated_at": datetime.utcnow(),
-                            "run_flags.afternoon_done": True
-                        }
+        else:  # AFTERNOON
+            col.update_one(
+                {"trade_date": trade_date},
+                {
+                    "$set": {
+                        "buy_signals": buy_signals,
+                        "updated_at": datetime.utcnow(),
+                        "run_flags.afternoon_done": True
                     }
-                )
+                },
+                upsert=True
+            )
 
         print(f"✅ BUY signals saved: {len(buy_signals)}")
 
         if not buy_signals:
             send_message(f"ℹ️ No BUY signals for {trade_date}")
-            return
-
-        print("📤 Telegram alert sent")
 
     except Exception:
         notify_exception("MAIN RUN")
