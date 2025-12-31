@@ -5,7 +5,7 @@ on:
     branches: [ main ]
     paths:
       - ".github/workflows/main.yml"
-      - "buy_breakout_915.py"
+      - "sell_breakdown_1000.py"
 
   workflow_dispatch:
 
