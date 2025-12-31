@@ -51,7 +51,7 @@ def download_file_from_google_drive(file_id, destination):
 # =====================================================
 # MAIN
 # =====================================================
-def main():
+def download_main():
     print("⬇️ Downloading obj_data.json from Google Drive...")
 
     download_file_from_google_drive(FILE_ID, OUTPUT_FILE)
@@ -66,6 +66,3 @@ def main():
     print(f"✅ Downloaded obj_data.json")
     print(f"📦 Total records: {len(data)}")
 
-
-if __name__ == "__main__":
-    main()
