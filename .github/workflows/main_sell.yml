@@ -38,7 +38,7 @@ jobs:
       # ----------------------------
       - name: Run entry point script
         env:
-          MONGO_URL: ${{ secrets.MONGO_URL }}
+          MONGO_URL: ${{ secrets.MONGO_URI }}
           TELEGRAM_DATA: ${{ secrets.TELEGRAM_DATA }}
         run: |
           python sell_breakdown_1000.py
