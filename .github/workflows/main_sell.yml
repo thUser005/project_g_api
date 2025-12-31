@@ -5,8 +5,7 @@ on:
     branches: [ main ]
     paths:
       - ".github/workflows/main.yml"
-      - "get_entry_point.py"
-      - "fetch_opening_prices.py"
+      - "buy_breakout_915.py"
 
   workflow_dispatch:
 
