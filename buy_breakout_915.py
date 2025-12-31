@@ -30,9 +30,9 @@ try:
 except Exception as e:
     print("Error : ",e)
     
-MONGO_URI = os.getenv("MONGO_URI")
-if not MONGO_URI:
-    raise RuntimeError("❌ MONGO_URI not set")
+MONGO_URL = os.getenv("MONGO_URL")
+if not MONGO_URL:
+    raise RuntimeError("❌ MONGO_URL not set")
 
 DB = "trading"
 COL = "daily_signals"
@@ -197,7 +197,7 @@ def run_buy():
                     with lock:
                         buy_signals.append(r)
 
-        client = MongoClient(MONGO_URI)
+        client = MongoClient(MONGO_URL)
         col = client[DB][COL]
         col.create_index("trade_date", unique=True)
 
