@@ -1,10 +1,9 @@
-name: Run NSE Entry Pipeline
+name: BUY  NSE Entry Pipeline
 
 on:
   push:
     branches: [ main ]
     paths:
-      - ".github/workflows/main_sell.yml"
       - "buy_breakout_915.py"
 
   workflow_dispatch:

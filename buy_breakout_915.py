@@ -1,6 +1,6 @@
 import os
 import json
-import math
+import math,time
 import requests
 import traceback
 from datetime import datetime, timedelta, timezone
@@ -23,6 +23,8 @@ MAX_WORKERS = 15
 MAX_RETRIES = 3
 
 IST = timezone(timedelta(hours=5, minutes=30))
+TEST_FLAG = False   # 🔁 True = run immediately, False = wait till 09:17 IST
+RUN_AFTER = (9, 17) # (hour, minute)
 
 # ================= DOWNLOAD MASTER =================
 try:
@@ -45,6 +47,26 @@ def to_bool(v):
     if isinstance(v, str):
         return v.lower() == "true"
     return False
+def wait_until_917_if_needed():
+    if TEST_FLAG:
+        print("🧪 TEST MODE: Skipping time wait")
+        return
+
+    now = datetime.now(IST)
+    run_time = now.replace(
+        hour=RUN_AFTER[0],
+        minute=RUN_AFTER[1],
+        second=0,
+        microsecond=0
+    )
+
+    if now < run_time:
+        wait_seconds = (run_time - now).total_seconds()
+        mins = round(wait_seconds / 60, 2)
+        print(f"⏳ Waiting until 09:17 IST ({mins} mins)...")
+        time.sleep(wait_seconds)
+    else:
+        print("⏰ Time ≥ 09:17 IST — starting immediately")
 
 def notify_exception(context):
     msg = (
@@ -253,4 +275,5 @@ def run_buy():
 
 # ================= ENTRY =================
 if __name__ == "__main__":
+    wait_until_917_if_needed()
     run_buy()

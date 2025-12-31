@@ -19,6 +19,8 @@ EXCHANGE = "NSE"
 
 MAX_WORKERS = 15
 MAX_RETRIES = 3
+TEST_FLAG = False   # 🔁 True = run immediately, False = wait till 09:17 IST
+RUN_AFTER = (10, 0) # (hour, minute)
 
 IST = timezone(timedelta(hours=5, minutes=30))
  
@@ -42,6 +44,27 @@ def to_bool(v):
     if isinstance(v, str):
         return v.lower() == "true"
     return False
+
+def wait_until_10_if_needed():
+    if TEST_FLAG:
+        print("🧪 TEST MODE: Skipping time wait")
+        return
+
+    now = datetime.now(IST)
+    run_time = now.replace(
+        hour=RUN_AFTER[0],
+        minute=RUN_AFTER[1],
+        second=0,
+        microsecond=0
+    )
+
+    if now < run_time:
+        wait_seconds = (run_time - now).total_seconds()
+        mins = round(wait_seconds / 60, 2)
+        print(f"⏳ Waiting until 10.00 IST ({mins} mins)...")
+        time.sleep(wait_seconds)
+    else:
+        print("⏰ Time ≥ 10.00 IST — starting immediately")
 
 def notify_exception(context):
     msg = (
@@ -255,4 +278,5 @@ def run_sell():
 
 # ================= ENTRY =================
 if __name__ == "__main__":
+    wait_until_10_if_needed()
     run_sell()
