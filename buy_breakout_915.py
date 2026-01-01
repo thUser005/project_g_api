@@ -1,6 +1,7 @@
 import os
 import json
-import math,time
+import math
+import time
 import requests
 import traceback
 from datetime import datetime, timedelta, timezone
@@ -20,11 +21,12 @@ INTERVAL_MINUTES = 3
 EXCHANGE = "NSE"
 
 MAX_WORKERS = 15
-MAX_RETRIES = 3
+MAX_RETRIES = 3          # API retry
+FALLBACK_ROUNDS = 3      # 🔁 full re-scan retries
 
 IST = timezone(timedelta(hours=5, minutes=30))
-TEST_FLAG = False   # 🔁 True = run immediately, False = wait till 09:17 IST
-RUN_AFTER = (9, 17) # (hour, minute)
+TEST_FLAG = False
+RUN_AFTER = (9, 20)      # (hour, minute)
 
 # ================= DOWNLOAD MASTER =================
 try:
@@ -47,6 +49,7 @@ def to_bool(v):
     if isinstance(v, str):
         return v.lower() == "true"
     return False
+
 def wait_until_917_if_needed():
     if TEST_FLAG:
         print("🧪 TEST MODE: Skipping time wait")
@@ -63,10 +66,10 @@ def wait_until_917_if_needed():
     if now < run_time:
         wait_seconds = (run_time - now).total_seconds()
         mins = round(wait_seconds / 60, 2)
-        print(f"⏳ Waiting until 09:17 IST ({mins} mins)...")
+        print(f"⏳ Waiting until {RUN_AFTER[0]:02}:{RUN_AFTER[1]:02} IST ({mins} mins)...")
         time.sleep(wait_seconds)
     else:
-        print("⏰ Time ≥ 09:17 IST — starting immediately")
+        print("⏰ Time reached — starting immediately")
 
 def notify_exception(context):
     msg = (
@@ -90,24 +93,13 @@ def market_range():
     e = datetime.strptime(d, "%Y-%m-%d").replace(hour=15, minute=30, tzinfo=IST)
     return to_ms(s), to_ms(e)
 
-# ================= RUN MODE (DB FIRST) =================
+# ================= RUN MODE =================
 def get_run_mode(col, trade_date):
-    """
-    Priority:
-    1️⃣ If no document → MORNING
-    2️⃣ If morning_done != True → MORNING
-    3️⃣ Else → AFTERNOON
-    """
-
     doc = col.find_one({"trade_date": trade_date})
-
     if not doc:
         return "MORNING"
-
-    flags = doc.get("run_flags", {})
-    if not flags.get("morning_done"):
+    if not doc.get("run_flags", {}).get("morning_done"):
         return "MORNING"
-
     return "AFTERNOON"
 
 # ================= FETCH =================
@@ -129,20 +121,15 @@ def fetch_candles_with_retry(symbol, start, end):
             r.raise_for_status()
             return r.json().get("candles", [])
         except Exception:
-            print(f"⚠️ {symbol} retry {attempt}/{MAX_RETRIES}")
+            print(f"⚠️ {symbol} API retry {attempt}/{MAX_RETRIES}")
 
     return []
 
 def extract_day_high_low(candles):
-    highs, lows = [], []
-    for c in candles:
-        if len(c) >= 4:
-            highs.append(c[2])
-            lows.append(c[3])
-
+    highs = [c[2] for c in candles if len(c) >= 4]
+    lows = [c[3] for c in candles if len(c) >= 4]
     if not highs or not lows:
         return None, None
-
     return round(max(highs), 2), round(min(lows), 2)
 
 # ================= WORKER =================
@@ -157,30 +144,27 @@ def process_stock(stock, start, end, run_mode):
 
         candles = fetch_candles_with_retry(symbol, start, end)
         if not candles:
-            return None
+            return symbol   # 👈 failed → retry later
 
         first = candles[0]
         if len(first) < 6:
-            return None
+            return symbol
 
         open_price = first[1]
         volume = first[5]
 
-        if open_price is None or open_price <= 0:
-            return None
-
-        if volume is None or volume < 100:
-            return None
+        if open_price <= 0 or volume < 100:
+            return symbol
 
         entry = round(open_price * (1 + BREAKOUT_PCT), 2)
+        qty = math.floor(CAPITAL / entry)
+        if qty <= 0:
+            return symbol
+
         target = round(entry * (1 + TARGET_PCT), 2)
         stoploss = round(entry * (1 - STOPLOSS_PCT), 2)
 
-        qty = math.floor(CAPITAL / entry)
-        if qty <= 0:
-            return None
-
-        day_high, day_low = None, None
+        day_high = day_low = None
         if run_mode == "AFTERNOON":
             day_high, day_low = extract_day_high_low(candles)
 
@@ -198,7 +182,7 @@ def process_stock(stock, start, end, run_mode):
 
     except Exception:
         notify_exception(f"PROCESS_STOCK: {symbol}")
-        return None
+        return symbol
 
 # ================= MAIN =================
 def run_buy():
@@ -213,57 +197,67 @@ def run_buy():
         run_mode = get_run_mode(col, trade_date)
 
         with open("obj_data.json", "r", encoding="utf-8") as f:
-            stocks = json.load(f)
+            all_stocks = json.load(f)
 
         buy_signals = []
-        lock = Lock()
+        failed_symbols = set()
+        current_stocks = all_stocks
 
         print(f"🚀 BUY Scan | {trade_date} | Mode: {run_mode}")
-        print(f"📦 Stocks: {len(stocks)}")
+        print(f"📦 Total stocks: {len(all_stocks)}")
 
-        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-            futures = [
-                executor.submit(process_stock, stock, start, end, run_mode)
-                for stock in stocks
+        for round_no in range(1, FALLBACK_ROUNDS + 1):
+            print(f"🔁 Fallback round {round_no} | Stocks: {len(current_stocks)}")
+
+            next_failed = set()
+
+            with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+                futures = {
+                    executor.submit(process_stock, stock, start, end, run_mode): stock
+                    for stock in current_stocks
+                }
+
+                for future in as_completed(futures):
+                    result = future.result()
+                    if isinstance(result, dict):
+                        buy_signals.append(result)
+                    elif isinstance(result, str):
+                        next_failed.add(result)
+
+            if not next_failed:
+                break
+
+            failed_symbols = next_failed
+            current_stocks = [
+                s for s in all_stocks
+                if s.get("nse_code") in failed_symbols
             ]
 
-            for future in as_completed(futures):
-                r = future.result()
-                if r:
-                    with lock:
-                        buy_signals.append(r)
+            time.sleep(2)  # polite delay
 
-        if run_mode == "MORNING":
-            col.update_one(
-                {"trade_date": trade_date},
-                {
-                    "$set": {
-                        "buy_signals": buy_signals,
-                        "updated_at": datetime.utcnow(),
-                        "run_flags.morning_done": True
-                    },
-                    "$setOnInsert": {
-                        "trade_date": trade_date,
-                        "created_at": datetime.utcnow(),
-                        "capital": CAPITAL,
-                        "margin": 5
-                    }
-                },
-                upsert=True
+        if failed_symbols:
+            send_message(
+                f"⚠️ BUY Scan {trade_date}\n"
+                f"Unavailable after retries ({len(failed_symbols)}):\n"
+                + ", ".join(sorted(failed_symbols)[:50])
             )
 
-        else:  # AFTERNOON
-            col.update_one(
-                {"trade_date": trade_date},
-                {
-                    "$set": {
-                        "buy_signals": buy_signals,
-                        "updated_at": datetime.utcnow(),
-                        "run_flags.afternoon_done": True
-                    }
-                },
-                upsert=True
-            )
+        # ================= SAVE =================
+        payload = {
+            "$set": {
+                "buy_signals": buy_signals,
+                "updated_at": datetime.now(timezone.utc),
+                f"run_flags.{run_mode.lower()}_done": True
+            },
+            "$setOnInsert": {
+                "trade_date": trade_date,
+                "created_at": datetime.now(timezone.utc),
+                "capital": CAPITAL,
+                "margin": 5
+            }
+        }
+
+        col.update_one({"trade_date": trade_date}, payload, upsert=True)
 
         print(f"✅ BUY signals saved: {len(buy_signals)}")
 
