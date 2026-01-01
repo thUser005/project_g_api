@@ -126,11 +126,34 @@ def fetch_candles_with_retry(symbol, start, end):
     return []
 
 def extract_day_high_low(candles):
-    highs = [c[2] for c in candles if len(c) >= 4]
-    lows = [c[3] for c in candles if len(c) >= 4]
+    highs = [c[2] for c in candles if len(c) >= 4 and isinstance(c[2], (int, float))]
+    lows = [c[3] for c in candles if len(c) >= 4 and isinstance(c[3], (int, float))]
     if not highs or not lows:
         return None, None
     return round(max(highs), 2), round(min(lows), 2)
+
+# ================= BASE CANDLE FINDER =================
+def find_valid_open_candle(candles, min_volume=100):
+    """
+    Returns (open_price, volume) from the first valid candle.
+    """
+    for c in candles:
+        if len(c) < 6:
+            continue
+
+        open_price = c[1]
+        volume = c[5]
+
+        if open_price is None or volume is None:
+            continue
+
+        if not isinstance(open_price, (int, float)):
+            continue
+
+        if open_price > 0 and volume >= min_volume:
+            return open_price, volume
+
+    return None, None
 
 # ================= WORKER =================
 def process_stock(stock, start, end, run_mode):
@@ -144,16 +167,10 @@ def process_stock(stock, start, end, run_mode):
 
         candles = fetch_candles_with_retry(symbol, start, end)
         if not candles:
-            return symbol   # 👈 failed → retry later
+            return symbol   # retry later
 
-        first = candles[0]
-        if len(first) < 6:
-            return symbol
-
-        open_price = first[1]
-        volume = first[5]
-
-        if open_price <= 0 or volume < 100:
+        open_price, volume = find_valid_open_candle(candles)
+        if open_price is None:
             return symbol
 
         entry = round(open_price * (1 + BREAKOUT_PCT), 2)
@@ -242,7 +259,6 @@ def run_buy():
                 + ", ".join(sorted(failed_symbols)[:50])
             )
 
-        # ================= SAVE =================
         payload = {
             "$set": {
                 "buy_signals": buy_signals,
