@@ -4,3 +4,4 @@ requests
 pymongo
 pillow
 tabulate
+python-dotenv
