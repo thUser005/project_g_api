@@ -14,13 +14,13 @@ from download_obj_data import download_main
 
 # ================= CONFIG =================
 CAPITAL = 20_000
-BREAKOUT_PCT = 0.03
-TARGET_PCT = 0.03
-STOPLOSS_PCT = 0.01
+BREAKOUT_PCT = 0.04
+TARGET_PCT = 0.01
+STOPLOSS_PCT = 0.02
 INTERVAL_MINUTES = 3
 EXCHANGE = "NSE"
 
-MAX_WORKERS = 15
+MAX_WORKERS = 20
 MAX_RETRIES = 3          # API retry
 FALLBACK_ROUNDS = 3      # 🔁 full re-scan retries
 
