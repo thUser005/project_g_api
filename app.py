@@ -1,8 +1,10 @@
 import time
 import os
+import threading
 import requests
 from datetime import datetime, time as dtime, timedelta, timezone
 from dotenv import load_dotenv
+from flask import Flask, jsonify
 
 # ===============================
 # LOAD ENV
@@ -19,6 +21,22 @@ if not PAT_TOKEN:
     raise RuntimeError("❌ PAT_TOKEN not set in environment")
 
 IST = timezone(timedelta(hours=5, minutes=30))
+
+# ===============================
+# FLASK APP (HEALTH CHECK)
+# ===============================
+app = Flask(__name__)
+
+@app.route("/health")
+def health():
+    return jsonify({
+        "status": "ok",
+        "time": datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S")
+    })
+
+def run_flask():
+    port = int(os.getenv("PORT", 8080))
+    app.run(host="0.0.0.0", port=port)
 
 # ===============================
 # WORKFLOWS
@@ -88,7 +106,13 @@ def trigger_workflow(workflow):
         print(f"❌ Failed {workflow}: {r.status_code} {r.text}")
 
 # ===============================
-# MAIN LOOP
+# START FLASK IN BACKGROUND
+# ===============================
+threading.Thread(target=run_flask, daemon=True).start()
+print("🌐 Health server started")
+
+# ===============================
+# MAIN LOOP (SCHEDULER)
 # ===============================
 print("🚀 Scheduler started (IST)")
 
@@ -149,6 +173,6 @@ while True:
             print(f"⏰ {t} → Triggering {workflow}")
             trigger_workflow(workflow)
             triggered_today.add(key)
-            time.sleep(65)  # hard safety
+            time.sleep(65)
 
     time.sleep(15)
